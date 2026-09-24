@@ -1,0 +1,302 @@
+# Moriarty Base Ontology Schema
+# Defines the fundamental rules of the simulation world.
+
+version: "1.0.0"
+name: "moriarty-base"
+description: >
+  Core ontology for the Moriarty open-world simulation engine.
+  Defines entity types, relation semantics, available actions,
+  and component schemas for the executable ontology.
+
+# ─── Entity Type Definitions ─────────────────────────────────────────────────
+
+entity_types:
+  - type: agent
+    description: "A Gemini-driven autonomous actor capable of observation, reasoning, and action."
+    required_properties: [name, position]
+    optional_properties: [health, stamina, description]
+    allowed_components: [inventory, knowledge, dialogue, stats]
+
+  - type: npc
+    description: "A rule-driven or scripted actor with predefined behavior patterns."
+    required_properties: [name, position]
+    optional_properties: [health, stamina, description, behavior_script]
+    allowed_components: [inventory, knowledge, dialogue, stats, patrol]
+
+  - type: object
+    description: "An interactive world object that can be examined, picked up, or manipulated."
+    required_properties: [name]
+    optional_properties: [position, description, weight, is_portable, is_locked]
+    allowed_components: [container]
+
+  - type: location
+    description: "A named spatial region, room, or zone in the world."
+    required_properties: [name]
+    optional_properties: [description, ambient_description, is_outdoor, lighting]
+    allowed_components: []
+
+  - type: concept
+    description: "An abstract ontological node — quests, factions, knowledge topics."
+    required_properties: [name]
+    optional_properties: [description, status, priority]
+    allowed_components: []
+
+  - type: event
+    description: "A reified event node used for causal chain tracking."
+    required_properties: [name]
+    optional_properties: [description, severity]
+    allowed_components: []
+
+# ─── Relation Type Definitions ────────────────────────────────────────────────
+
+relation_types:
+  - type: located_in
+    description: "Entity is spatially contained within a location."
+    source_types: [agent, npc, object]
+    target_types: [location]
+
+  - type: owns
+    description: "Entity possesses another entity (typically an object)."
+    source_types: [agent, npc]
+    target_types: [object]
+
+  - type: knows
+    description: "Entity is aware of / has knowledge about another entity."
+    source_types: [agent, npc]
+    target_types: [agent, npc, object, location, concept]
+
+  - type: allied_with
+    description: "Social alliance or positive disposition between actors."
+    source_types: [agent, npc]
+    target_types: [agent, npc, concept]
+
+  - type: hostile_to
+    description: "Antagonistic relationship between actors."
+    source_types: [agent, npc]
+    target_types: [agent, npc, concept]
+
+  - type: contains
+    description: "Physical containment — a container holds items."
+    source_types: [object, location]
+    target_types: [object]
+
+  - type: depends_on
+    description: "Causal or logical dependency between entities or concepts."
+    source_types: [concept, event]
+    target_types: [concept, event, object]
+
+  - type: caused_by
+    description: "Direct causation link in the event chain."
+    source_types: [event]
+    target_types: [event]
+
+  - type: blocks
+    description: "One entity prevents access to or action on another."
+    source_types: [object, npc, concept]
+    target_types: [object, location, concept]
+
+  - type: enables
+    description: "One entity allows or facilitates action on another."
+    source_types: [object, concept]
+    target_types: [object, location, concept]
+
+# ─── Component Schemas ────────────────────────────────────────────────────────
+
+component_schemas:
+  - type: inventory
+    description: "A collection of owned items."
+    properties:
+      items:
+        type: list
+        required: true
+        description: "List of entity ID references to owned objects"
+      max_capacity:
+        type: number
+        required: false
+        default: 20
+        description: "Maximum number of items"
+
+  - type: stats
+    description: "Numeric attributes for combat and skill checks."
+    properties:
+      strength:
+        type: number
+        required: false
+        default: 10
+      agility:
+        type: number
+        required: false
+        default: 10
+      intelligence:
+        type: number
+        required: false
+        default: 10
+      perception:
+        type: number
+        required: false
+        default: 10
+
+  - type: knowledge
+    description: "Facts and memories the entity has accumulated."
+    properties:
+      facts:
+        type: list
+        required: true
+        description: "List of known fact strings"
+
+  - type: dialogue
+    description: "Conversation capabilities and state."
+    properties:
+      greeting:
+        type: string
+        required: false
+        description: "Default greeting message"
+      disposition:
+        type: string
+        required: false
+        description: "Current attitude toward the player"
+
+  - type: container
+    description: "An object that can hold other objects."
+    properties:
+      items:
+        type: list
+        required: true
+        description: "List of entity ID references to contained objects"
+      is_locked:
+        type: boolean
+        required: false
+        default: false
+      required_key:
+        type: ref
+        required: false
+        description: "Entity ID of the key required to unlock"
+
+# ─── Action Definitions ──────────────────────────────────────────────────────
+
+actions:
+  - id: move_to
+    name: "Move To"
+    description: "Move to a connected location."
+    actor_types: [agent, npc]
+    tick_cost: 1
+    preconditions:
+      - type: entity_type_is
+        description: "Target must be a location"
+        params:
+          expected_type: location
+    effects:
+      - type: remove_relation
+        description: "Leave current location"
+        params:
+          relation_type: located_in
+      - type: add_relation
+        description: "Enter target location"
+        params:
+          relation_type: located_in
+
+  - id: pick_up
+    name: "Pick Up"
+    description: "Pick up a portable object from the current location."
+    actor_types: [agent, npc]
+    tick_cost: 1
+    preconditions:
+      - type: entity_type_is
+        description: "Target must be an object"
+        params:
+          expected_type: object
+      - type: property_check
+        description: "Object must be portable"
+        params:
+          property: is_portable
+          value: true
+    effects:
+      - type: add_relation
+        description: "Actor now owns the object"
+        params:
+          relation_type: owns
+
+  - id: examine
+    name: "Examine"
+    description: "Closely examine an entity to learn more about it."
+    actor_types: [agent, npc]
+    tick_cost: 1
+    preconditions: []
+    effects:
+      - type: add_relation
+        description: "Actor now knows about the entity"
+        params:
+          relation_type: knows
+
+  - id: speak_to
+    name: "Speak To"
+    description: "Initiate conversation with another actor."
+    actor_types: [agent, npc]
+    tick_cost: 1
+    preconditions:
+      - type: entity_type_is
+        description: "Target must be an actor (agent or NPC)"
+        params:
+          expected_type: npc
+    effects:
+      - type: add_relation
+        description: "Actors now know each other"
+        params:
+          relation_type: knows
+
+  - id: attack
+    name: "Attack"
+    description: "Attack a hostile entity."
+    actor_types: [agent, npc]
+    tick_cost: 2
+    stamina_cost: 10
+    preconditions:
+      - type: relation_exists
+        description: "Must be hostile to the target"
+        params:
+          relation_type: hostile_to
+    effects:
+      - type: modify_property
+        description: "Reduce target's health"
+        params:
+          property: health
+          delta: -15
+
+  - id: use_item
+    name: "Use Item"
+    description: "Use an item from inventory on a target."
+    actor_types: [agent, npc]
+    tick_cost: 1
+    preconditions:
+      - type: inventory_has
+        description: "Must have the item in inventory"
+        params: {}
+    effects: []
+
+  - id: unlock
+    name: "Unlock"
+    description: "Unlock a locked container or door using the correct key."
+    actor_types: [agent, npc]
+    tick_cost: 1
+    preconditions:
+      - type: property_check
+        description: "Object must be locked"
+        params:
+          property: is_locked
+          value: true
+    effects:
+      - type: set_property
+        description: "Unlock the object"
+        params:
+          property: is_locked
+          value:
+            type: boolean
+            value: false
+
+  - id: wait
+    name: "Wait"
+    description: "Do nothing for this tick. Useful for observing and gathering information."
+    actor_types: [agent, npc]
+    tick_cost: 1
+    preconditions: []
+    effects: []

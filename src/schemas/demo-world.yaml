@@ -1,0 +1,137 @@
+# Moriarty Demo World — "The Scholar's Riddle"
+# A small test scenario for validating the ontology engine.
+
+version: "1.0.0"
+name: "scholars-riddle"
+description: >
+  A compact demo world: an abandoned library with a locked vault,
+  a mysterious scholar NPC, and a puzzle to solve. Tests movement,
+  examination, dialogue, inventory, and lock/key mechanics.
+
+# ─── Locations ────────────────────────────────────────────────────────────────
+
+locations:
+  - id: entrance_hall
+    name: "Entrance Hall"
+    description: "A grand hall with marble pillars. Dust motes drift in beams of light from high windows."
+    ambient_description: "The air smells of old parchment and forgotten time."
+    is_outdoor: false
+    position: { x: 0, y: 0, z: 0 }
+
+  - id: main_library
+    name: "Main Library"
+    description: "Towering shelves of ancient tomes stretch toward a vaulted ceiling. A spiral staircase winds upward."
+    ambient_description: "You hear the faint creak of settling wood and distant whispers."
+    is_outdoor: false
+    position: { x: 100, y: 0, z: 0 }
+
+  - id: vault_chamber
+    name: "The Vault"
+    description: "A small stone chamber behind a heavy iron door. Ancient runes glow faintly on the walls."
+    ambient_description: "The air here is cold and carries a strange metallic tang."
+    is_outdoor: false
+    position: { x: 200, y: 0, z: 0 }
+
+  - id: upper_balcony
+    name: "Upper Balcony"
+    description: "A narrow balcony overlooking the main library. A single reading desk sits near the railing."
+    ambient_description: "From up here, you can see the full layout of the library below."
+    is_outdoor: false
+    position: { x: 100, y: 0, z: 50 }
+
+# ─── Connections (bidirectional adjacency) ────────────────────────────────────
+
+connections:
+  - from: entrance_hall
+    to: main_library
+  - from: main_library
+    to: vault_chamber
+  - from: main_library
+    to: upper_balcony
+
+# ─── NPCs ─────────────────────────────────────────────────────────────────────
+
+npcs:
+  - id: scholar_meridia
+    name: "Meridia, the Wandering Scholar"
+    description: "A tall figure in a threadbare cloak, with sharp eyes behind round spectacles. She studies you with quiet curiosity."
+    location: main_library
+    position: { x: 110, y: 0, z: 0 }
+    health: 100
+    stamina: 50
+    components:
+      dialogue:
+        greeting: "Ah, another seeker. The vault holds what you want — but knowledge is its key."
+        disposition: neutral
+      knowledge:
+        facts:
+          - "The vault requires the Crystal Key to open."
+          - "The Crystal Key is hidden in a book on the upper balcony."
+          - "The runes on the vault walls are ancient Celestial script."
+
+# ─── Objects ──────────────────────────────────────────────────────────────────
+
+objects:
+  - id: crystal_key
+    name: "Crystal Key"
+    description: "A delicate key carved from a single piece of clear crystal. It catches the light and throws tiny rainbows."
+    location: upper_balcony
+    position: { x: 105, y: 0, z: 52 }
+    is_portable: true
+    weight: 0.2
+
+  - id: vault_door
+    name: "Vault Door"
+    description: "A massive iron door covered in glowing runes. A crystal-shaped keyhole gleams in its center."
+    location: vault_chamber
+    position: { x: 199, y: 0, z: 0 }
+    is_portable: false
+    is_locked: true
+
+  - id: ancient_tome
+    name: "Ancient Tome of Celestial Script"
+    description: "A heavy leather-bound book with pages of thin gold leaf. The text is written in shimmering Celestial script."
+    location: vault_chamber
+    position: { x: 200, y: 0, z: 1 }
+    is_portable: true
+    weight: 3.5
+
+  - id: reading_desk_note
+    name: "Faded Note"
+    description: "A scrap of parchment pinned to the reading desk: 'The key sees through crystal eyes — look where the stars are bound in pages.'"
+    location: upper_balcony
+    position: { x: 100, y: 0, z: 51 }
+    is_portable: true
+    weight: 0.01
+
+  - id: ornate_chest
+    name: "Ornate Chest"
+    description: "A beautifully carved wooden chest with gold filigree. It sits in the entrance hall, unlocked."
+    location: entrance_hall
+    position: { x: 5, y: 0, z: 0 }
+    is_portable: false
+    is_locked: false
+
+# ─── Agent (Player) ──────────────────────────────────────────────────────────
+
+agent:
+  id: player_agent
+  name: "The Seeker"
+  description: "A curious explorer drawn to this abandoned library by rumors of ancient knowledge."
+  location: entrance_hall
+  position: { x: 0, y: 0, z: 0 }
+  health: 100
+  stamina: 100
+  components:
+    inventory:
+      items: []
+      max_capacity: 10
+    stats:
+      strength: 12
+      agility: 14
+      intelligence: 16
+      perception: 18
+    knowledge:
+      facts:
+        - "There is said to be a hidden vault in this library."
+        - "A scholar named Meridia is known to frequent this place."

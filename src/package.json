@@ -1,0 +1,35 @@
+{
+  "name": "@moriarty/runtime",
+  "version": "0.1.0",
+  "description": "Moriarty Executable Ontology & Causal State Graph Engine",
+  "type": "module",
+  "main": "dist/runtime/index.js",
+  "types": "dist/runtime/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch runtime/index.ts",
+    "start": "tsx runtime/index.ts",
+    "demo": "tsx runtime/demo.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --ext .ts"
+  },
+  "dependencies": {
+    "@google/genai": "^2.3.0",
+    "yaml": "^2.7.0",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
