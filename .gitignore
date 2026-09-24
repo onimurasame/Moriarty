@@ -1,0 +1,8 @@
+# Project Moriarty - Open World Game Agent Harness
+# Do not commit temporary scratchpads or logs
+*.log
+*.tmp
+scratch/
+scratchpad/
+*.scratchpad.md
+node_modules/

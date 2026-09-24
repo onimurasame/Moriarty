@@ -1,0 +1,13 @@
+# Moriarty Engine Configuration
+version: "1.0.0"
+knowledge_base:
+  backend: "gemini_notebook"
+  notebook_id: "notebooks/4708df45-03a5-454d-811c-dc0401a2e16b"
+  title: "Open world Game as Agent Harness"
+  transitive_routing_only: true
+  commit_scratchpads_to_vcs: false
+
+harness:
+  engine: "executable_ontology"
+  default_model: "gemini-3.8-flash"
+  agent_runtime: "antigravity-preview-05-2026"
