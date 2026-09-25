@@ -16,3 +16,4 @@ Binaries/
 *.sln
 *.env
 run_mcp_bridge.js
+*.ipynb
