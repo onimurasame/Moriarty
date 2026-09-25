@@ -1,33 +1,33 @@
 /**
- * Gemini Orchestrator Agent — Integrates the Gemini Interactions API
- * with the Causal State Graph via Function Calling.
+ * Moriarty Orchestrator Agent — LLM-driven autonomous agent
+ * integrated with the Causal State Graph via Function Calling.
  *
- * The orchestrator agent observes the world, reasons about it, and
- * takes actions through the defined tool interface. It uses stateful
- * conversations (previous_interaction_id) to maintain context across ticks.
+ * Employs the LLMProvider abstraction (MockProvider, OllamaProvider, GeminiProvider)
+ * to observe, reason, and act across discrete simulation ticks.
  */
 
-import { GoogleGenAI } from "@google/genai";
 import type { CausalStateGraph } from "../csg/graph.js";
 import type { ActionRequest } from "../types.js";
 import {
   getAgentToolDeclarations,
   executeAgentTool,
 } from "./tools.js";
+import {
+  type LLMProvider,
+  type LLMMessage,
+  MockProvider,
+} from "./provider.js";
 
 export interface OrchestratorConfig {
-  /** Gemini model to use (default: gemini-3.8-flash) */
-  model: string;
+  /** LLM provider instance (MockProvider, OllamaProvider, GeminiProvider) */
+  provider?: LLMProvider;
   /** System instruction for the orchestrator */
   systemInstruction: string;
   /** Maximum function calling rounds per tick */
   maxRoundsPerTick: number;
-  /** Whether to store interactions for conversation history */
-  storeInteractions: boolean;
 }
 
 const DEFAULT_CONFIG: OrchestratorConfig = {
-  model: "gemini-3.8-flash",
   systemInstruction: `You are the Moriarty Simulation Orchestrator — an AI agent inhabiting an open world.
 You observe the world through your tools and take actions to pursue your goals.
 
@@ -41,25 +41,32 @@ Rules:
 
 You are curious, strategic, and methodical. Explore the world and build understanding.`,
   maxRoundsPerTick: 5,
-  storeInteractions: true,
 };
 
 export class OrchestratorAgent {
-  private client: GoogleGenAI;
+  private provider: LLMProvider;
   private config: OrchestratorConfig;
   private csg: CausalStateGraph;
   private agentEntityId: string;
-  private previousInteractionId: string | null = null;
+  private conversationHistory: LLMMessage[] = [];
 
   constructor(
     csg: CausalStateGraph,
     agentEntityId: string,
     config?: Partial<OrchestratorConfig>
   ) {
-    this.client = new GoogleGenAI({});
     this.csg = csg;
     this.agentEntityId = agentEntityId;
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.provider = this.config.provider ?? new MockProvider({ fallbackHeuristic: true });
+  }
+
+  get currentProvider(): LLMProvider {
+    return this.provider;
+  }
+
+  setProvider(provider: LLMProvider): void {
+    this.provider = provider;
   }
 
   /**
@@ -81,100 +88,112 @@ export class OrchestratorAgent {
     // Build the prompt for this tick
     const prompt = this.buildTurnPrompt(tick);
 
-    try {
-      // Initial interaction — the agent observes and decides
-      let interaction = await this.client.interactions.create({
-        model: this.config.model,
-        input: prompt,
-        system_instruction: this.config.systemInstruction,
-        tools: [{ function_declarations: getAgentToolDeclarations() }],
-        store: this.config.storeInteractions,
-        ...(this.previousInteractionId
-          ? { previous_interaction_id: this.previousInteractionId }
-          : {}),
+    if (this.conversationHistory.length === 0) {
+      this.conversationHistory.push({
+        role: "system",
+        content: this.config.systemInstruction,
       });
+    }
 
-      // Handle function calling loop
+    this.conversationHistory.push({ role: "user", content: prompt });
+
+    try {
       let rounds = 0;
-      while (rounds < this.config.maxRoundsPerTick) {
-        // Check for function calls in the interaction steps
-        const functionCalls = this.extractFunctionCalls(interaction);
+      const tools = getAgentToolDeclarations();
 
-        if (functionCalls.length === 0) {
-          // No more function calls — agent is done thinking
+      while (rounds < this.config.maxRoundsPerTick) {
+        let response;
+        try {
+          response = await this.provider.chat(this.conversationHistory, tools);
+        } catch (e) {
+          console.error(`[Orchestrator] Provider (${this.provider.id}) error:`, e);
           break;
         }
 
-        // Execute each function call
-        const functionResults: Array<{
-          call_id: string;
-          name: string;
-          result: unknown;
-        }> = [];
+        this.conversationHistory.push({
+          role: "assistant",
+          content: response.content,
+          tool_calls: response.tool_calls,
+        });
 
-        for (const call of functionCalls) {
+        const toolCalls = response.tool_calls;
+        if (!toolCalls || toolCalls.length === 0) {
+          if (response.content) {
+            console.log(
+              `[Orchestrator] Agent reasoning: ${response.content.slice(0, 200)}...`
+            );
+          }
+          // If the agent made observations but did not execute an action yet, prompt once to call perform_action
+          if (collectedActions.length === 0 && rounds < this.config.maxRoundsPerTick - 1) {
+            this.conversationHistory.push({
+              role: "user",
+              content: "You have reasoned about your observations. To proceed, call perform_action now with your action_id and target_ids.",
+            });
+            rounds++;
+            continue;
+          }
+          break;
+        }
+
+        for (const call of toolCalls) {
           console.log(
-            `[Orchestrator] Tool call: ${call.name}(${JSON.stringify(call.arguments).slice(0, 100)}...)`
+            `[Orchestrator] Tool call: ${call.function.name}(${JSON.stringify(call.function.arguments).slice(0, 100)}...)`
           );
 
-          const result = executeAgentTool(
-            this.csg,
-            call.name,
-            call.arguments as Record<string, unknown>
-          );
+          let result: unknown;
+          try {
+            const rawArgs = (call.function.arguments as Record<string, unknown>) ?? {};
+            const toolArgs: Record<string, unknown> = {
+              actor_id: this.agentEntityId,
+              agent_id: this.agentEntityId,
+              ...rawArgs,
+            };
+            if (!toolArgs.actor_id) toolArgs.actor_id = this.agentEntityId;
+            if (!toolArgs.agent_id) toolArgs.agent_id = this.agentEntityId;
 
-          // Collect action requests from perform_action calls
-          if (call.name === "perform_action" && result && typeof result === "object") {
-            const actionResult = result as Record<string, unknown>;
-            if (actionResult.success) {
-              // Action was already applied by the tool handler
-              collectedActions.push({
-                action_id: (call.arguments as Record<string, unknown>)
-                  .action_id as string,
-                actor_id: this.agentEntityId,
-                target_ids:
-                  ((call.arguments as Record<string, unknown>)
-                    .target_ids as string[]) ?? [],
-                params:
-                  ((call.arguments as Record<string, unknown>)
-                    .params as Record<string, unknown>) ?? {},
-                tick_submitted: tick,
-              });
+            result = executeAgentTool(
+              this.csg,
+              call.function.name,
+              toolArgs
+            );
+
+            // Collect action requests from perform_action calls
+            if (
+              call.function.name === "perform_action" &&
+              result &&
+              typeof result === "object"
+            ) {
+              const actionResult = result as Record<string, unknown>;
+              if (actionResult.success) {
+                if (actionResult.normalized_request) {
+                  const req = actionResult.normalized_request as ActionRequest;
+                  collectedActions.push({
+                    ...req,
+                    already_applied: true,
+                  });
+                } else {
+                  collectedActions.push({
+                    action_id: toolArgs.action_id as string,
+                    actor_id: this.agentEntityId,
+                    target_ids: (toolArgs.target_ids as string[]) ?? [],
+                    params: (toolArgs.params as Record<string, unknown>) ?? {},
+                    tick_submitted: tick,
+                    already_applied: true,
+                  });
+                }
+              }
             }
+          } catch (e) {
+            result = { error: String(e) };
           }
 
-          functionResults.push({
-            call_id: call.id,
-            name: call.name,
-            result,
+          this.conversationHistory.push({
+            role: "tool",
+            content: JSON.stringify(result),
           });
         }
 
-        // Send function results back to the model
-        interaction = await this.client.interactions.create({
-          model: this.config.model,
-          input: functionResults.map((fr) => ({
-            type: "function_result" as const,
-            call_id: fr.call_id,
-            name: fr.name,
-            result: JSON.stringify(fr.result),
-          })),
-          system_instruction: this.config.systemInstruction,
-          tools: [{ function_declarations: getAgentToolDeclarations() }],
-          store: this.config.storeInteractions,
-          previous_interaction_id: interaction.id,
-        });
-
         rounds++;
-      }
-
-      // Store interaction ID for conversation continuity
-      this.previousInteractionId = interaction.id ?? null;
-
-      // Log the agent's final reasoning
-      const outputText = interaction.output_text;
-      if (outputText) {
-        console.log(`[Orchestrator] Agent reasoning: ${outputText.slice(0, 200)}...`);
       }
     } catch (err) {
       console.error(`[Orchestrator] Error during turn ${tick}:`, err);
@@ -188,6 +207,15 @@ export class OrchestratorAgent {
    */
   private buildTurnPrompt(tick: number): string {
     const agent = this.csg.getEntity(this.agentEntityId)!;
+    const currentLocId = this.csg.getRelatedIds(this.agentEntityId, "located_in")[0];
+    const currentLoc = currentLocId ? this.csg.getEntity(currentLocId) : null;
+    const connectedLocIds = currentLocId ? this.csg.getRelatedIds(currentLocId, "enables") : [];
+    const connectedLocs = connectedLocIds
+      .map((id) => this.csg.getEntity(id))
+      .filter(Boolean)
+      .map((e) => `"${e!.name}" (ID: ${e!.id})`)
+      .join(", ");
+
     const recentEvents = this.csg
       .getEventLog()
       .filter(
@@ -205,36 +233,28 @@ export class OrchestratorAgent {
     return [
       `=== SIMULATION TICK ${tick} ===`,
       `You are "${agent.name}" (ID: ${agent.id}, type: ${agent.type}).`,
+      currentLoc
+        ? `Current Location: "${currentLoc.name}" (ID: ${currentLoc.id})`
+        : `Current Location: Unknown`,
+      connectedLocs
+        ? `Connected Locations reachable via move_to: ${connectedLocs}`
+        : `No known adjacent locations.`,
       ``,
       recentEvents
         ? `Recent events involving you:\n${recentEvents}`
         : "No recent events.",
       ``,
-      `What do you want to do? Use your tools to observe, reason, and act.`,
+      `Instructions for this tick:`,
+      `1. Use observe_surroundings to perceive nearby NPCs and objects.`,
+      `2. When ready to act, call perform_action with the action_id (e.g. move_to, examine, speak_to, take, unlock) and target_ids.`,
+      `What do you want to do?`,
     ].join("\n");
-  }
-
-  /**
-   * Extract function call steps from an interaction response.
-   */
-  private extractFunctionCalls(
-    interaction: { steps?: Array<{ type?: string; id?: string; name?: string; arguments?: unknown }> }
-  ): Array<{ id: string; name: string; arguments: unknown }> {
-    if (!interaction.steps) return [];
-
-    return interaction.steps
-      .filter((step) => step.type === "function_call")
-      .map((step) => ({
-        id: step.id ?? "",
-        name: step.name ?? "",
-        arguments: step.arguments ?? {},
-      }));
   }
 
   /**
    * Reset conversation history (start fresh context).
    */
   resetConversation(): void {
-    this.previousInteractionId = null;
+    this.conversationHistory = [];
   }
 }

@@ -170,6 +170,20 @@ export class SimulationTickLoop {
     // 3. Validate and execute each action
     const results: ActionResult[] = [];
     for (const action of actionsThisTick) {
+      if (action.already_applied) {
+        results.push({
+          success: true,
+          action_id: action.action_id,
+          actor_id: action.actor_id,
+          tick,
+          effects_applied: [],
+        });
+        console.log(
+          `[Tick ${tick}] ✓ ${action.action_id} by ${action.actor_id} (applied via tool)`
+        );
+        continue;
+      }
+
       const result = this.csg.applyAction(action);
       results.push(result);
 

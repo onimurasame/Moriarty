@@ -177,15 +177,70 @@ export function executeAgentTool(
   }
 }
 
+// ─── Normalization Helpers ───────────────────────────────────────────────────
+
+function normalizeStringArray(val: unknown): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) {
+    return val.map((item) => String(item).trim()).filter((s) => s.length > 0);
+  }
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map((item) => String(item).trim()).filter((s) => s.length > 0);
+        }
+      } catch {
+        return trimmed
+          .slice(1, -1)
+          .split(",")
+          .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+          .filter(Boolean);
+      }
+    }
+    return [trimmed];
+  }
+  return [];
+}
+
+function normalizeObject(val: unknown): Record<string, unknown> {
+  if (!val) return {};
+  if (typeof val === "object" && !Array.isArray(val)) {
+    return val as Record<string, unknown>;
+  }
+  if (typeof val === "string") {
+    try {
+      const parsed = JSON.parse(val);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function normalizeNumber(val: unknown, fallback: number): number {
+  if (typeof val === "number" && !isNaN(val)) return val;
+  if (typeof val === "string") {
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed)) return parsed;
+  }
+  return fallback;
+}
+
 // ─── Tool Handlers ────────────────────────────────────────────────────────────
 
 function handleObserveSurroundings(
   csg: CausalStateGraph,
   args: Record<string, unknown>
 ): unknown {
-  const agentId = args.agent_id as string;
-  const radius = (args.radius as number) ?? 50;
-  const filterTypes = args.filter_types as EntityType[] | undefined;
+  const agentId = String(args.agent_id ?? args.actor_id ?? "").trim();
+  const radius = normalizeNumber(args.radius, 50);
+  const filterTypes = normalizeStringArray(args.filter_types) as EntityType[];
 
   const agent = csg.getEntity(agentId);
   if (!agent) return { error: `Agent not found: ${agentId}` };
@@ -224,11 +279,17 @@ function handlePerformAction(
   csg: CausalStateGraph,
   args: Record<string, unknown>
 ): unknown {
+  const actionId = String(args.action_id ?? args.action ?? "").trim();
+  const actorId = String(args.actor_id ?? args.agent_id ?? "").trim();
+  const rawTargets = args.target_ids ?? args.target_id ?? [];
+  const targetIds = normalizeStringArray(rawTargets);
+  const params = normalizeObject(args.params);
+
   const request: ActionRequest = {
-    action_id: args.action_id as string,
-    actor_id: args.actor_id as string,
-    target_ids: (args.target_ids as string[]) ?? [],
-    params: (args.params as Record<string, unknown>) ?? {},
+    action_id: actionId,
+    actor_id: actorId,
+    target_ids: targetIds,
+    params,
     tick_submitted: csg.currentTick,
   };
 
@@ -241,6 +302,7 @@ function handlePerformAction(
     effects_count: result.effects_applied.length,
     failure_reason: result.failure_reason,
     failed_conditions: result.failed_conditions?.map((c) => c.description ?? c.type),
+    normalized_request: request,
   };
 }
 

@@ -144,6 +144,7 @@ export interface ActionRequest {
   target_ids: string[];                   // Target entities
   params: Record<string, unknown>;        // Additional parameters
   tick_submitted: number;                 // When the request was made
+  already_applied?: boolean;              // True if already applied by agent tool
 }
 
 /** Result of attempting to perform an action */
@@ -276,7 +277,7 @@ export interface ComponentSchema {
 
 // ─── Bridge Protocol ──────────────────────────────────────────────────────────
 
-/** State delta sent to UE per tick */
+/** State delta sent to UE per tick via MCP Tool calls */
 export interface StateDelta {
   tick: number;
   entities_added: SerializedEntity[];
@@ -286,19 +287,3 @@ export interface StateDelta {
   relations_removed: string[];
   events: EventEntry[];
 }
-
-/** Messages from Runtime → UE */
-export type RuntimeToUEMessage =
-  | { type: "world_snapshot";   payload: WorldSnapshot }
-  | { type: "state_delta";      payload: StateDelta }
-  | { type: "entity_spawned";   payload: SerializedEntity }
-  | { type: "entity_destroyed"; payload: { id: string } }
-  | { type: "event_occurred";   payload: EventEntry }
-  | { type: "tick_advance";     payload: { tick: number } };
-
-/** Messages from UE → Runtime */
-export type UEToRuntimeMessage =
-  | { type: "player_action";    payload: ActionRequest }
-  | { type: "request_snapshot"; payload: Record<string, never> }
-  | { type: "spatial_update";   payload: { id: string; position: Vector3; rotation: Vector3 } }
-  | { type: "ready";            payload: { client_version: string } };

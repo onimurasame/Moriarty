@@ -10,7 +10,7 @@ import type {
   Relation,
   RelationType,
   PropertyValue,
-} from "./types.js";
+} from "../types.js";
 
 /**
  * Options for creating a new relation.

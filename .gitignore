@@ -6,3 +6,13 @@ scratch/
 scratchpad/
 *.scratchpad.md
 node_modules/
+dist/
+# Unreal Engine
+Intermediate/
+Saved/
+DerivedDataCache/
+Binaries/
+.vs/
+*.sln
+*.env
+run_mcp_bridge.js

@@ -1,5 +1,5 @@
 /**
- * Ontology Schema Loader — Parse and validate YAML ontology definitions.
+ * Ontology Schema Loader — Parse and validate YAML ontology definitions using Zod.
  *
  * Ontology schemas define the "rules of the world" — what entity types exist,
  * what relations are valid, what actions are possible, and what components
@@ -8,28 +8,98 @@
 
 import { readFileSync } from "node:fs";
 import { parse as parseYAML } from "yaml";
-import type {
-  OntologySchema,
-  EntityTypeSchema,
-  RelationTypeSchema,
-  ActionSchema,
-  ComponentSchema,
-  Condition,
-  Effect,
-  EntityType,
-  RelationType,
-} from "./types.js";
+import { z } from "zod";
+import type { OntologySchema } from "../types.js";
 
-/** Valid entity types for schema validation */
-const VALID_ENTITY_TYPES: EntityType[] = [
-  "agent", "npc", "object", "location", "concept", "event",
-];
+// ─── Zod Schemas for Validation ───────────────────────────────────────────────
 
-/** Valid relation types for schema validation */
-const VALID_RELATION_TYPES: RelationType[] = [
+const EntityTypeZ = z.enum(["agent", "npc", "object", "location", "concept", "event"]);
+
+const RelationTypeZ = z.enum([
   "located_in", "owns", "knows", "allied_with", "hostile_to",
-  "contains", "depends_on", "caused_by", "blocks", "enables", "custom",
-];
+  "contains", "depends_on", "caused_by", "blocks", "enables", "custom"
+]);
+
+const ConditionTypeZ = z.enum([
+  "property_check", "relation_exists", "relation_absent", "proximity",
+  "inventory_has", "entity_type_is", "custom"
+]);
+
+const EffectTypeZ = z.enum([
+  "set_property", "add_relation", "remove_relation", "create_entity",
+  "destroy_entity", "emit_event", "modify_property", "custom"
+]);
+
+const PropertyValueTypeZ = z.enum([
+  "number", "string", "boolean", "vector3", "ref", "list"
+]);
+
+const ConditionZ = z.object({
+  type: ConditionTypeZ,
+  description: z.string().optional(),
+  params: z.record(z.unknown()).default({}),
+});
+
+const EffectZ = z.object({
+  type: EffectTypeZ,
+  description: z.string().optional(),
+  params: z.record(z.unknown()).default({}),
+});
+
+const ActionSchemaZ = z.object({
+  id: z.string(),
+  name: z.string().optional(), // Will default to id if not provided, handled in transform
+  description: z.string().default(""),
+  preconditions: z.array(ConditionZ).default([]),
+  effects: z.array(EffectZ).default([]),
+  tick_cost: z.number().default(1),
+  stamina_cost: z.number().optional(),
+  actor_types: z.array(EntityTypeZ).default(["agent", "npc"]),
+}).transform(val => ({
+  ...val,
+  name: val.name ?? val.id
+}));
+
+const EntityTypeSchemaZ = z.object({
+  type: EntityTypeZ,
+  description: z.string().default(""),
+  required_properties: z.array(z.string()).default([]),
+  optional_properties: z.array(z.string()).default([]),
+  allowed_components: z.array(z.string()).default([]),
+});
+
+const RelationTypeSchemaZ = z.object({
+  type: RelationTypeZ,
+  description: z.string().default(""),
+  source_types: z.array(EntityTypeZ).default(EntityTypeZ.options),
+  target_types: z.array(EntityTypeZ).default(EntityTypeZ.options),
+  properties: z.record(z.any()).optional(), // Optional relation properties
+});
+
+const ComponentPropertySchemaZ = z.object({
+  type: PropertyValueTypeZ,
+  required: z.boolean().default(false),
+  default: z.unknown().optional(),
+  description: z.string().optional(),
+});
+
+const ComponentSchemaZ = z.object({
+  type: z.string(),
+  description: z.string().default(""),
+  properties: z.record(ComponentPropertySchemaZ).default({}),
+});
+
+export const OntologySchemaZ = z.object({
+  version: z.string(),
+  name: z.string(),
+  description: z.string().default(""),
+  entity_types: z.array(EntityTypeSchemaZ).default([]),
+  relation_types: z.array(RelationTypeSchemaZ).default([]),
+  actions: z.array(ActionSchemaZ).default([]),
+  component_schemas: z.array(ComponentSchemaZ).default([]),
+});
+
+// ─── Loader Functions ─────────────────────────────────────────────────────────
 
 /**
  * Load and validate an ontology schema from a YAML file.
@@ -43,35 +113,16 @@ export function loadOntologyFromFile(filepath: string): OntologySchema {
  * Load and validate an ontology schema from a YAML string.
  */
 export function loadOntologyFromString(yamlContent: string): OntologySchema {
-  const data = parseYAML(yamlContent) as Record<string, unknown>;
-  return validateSchema(data);
-}
-
-/**
- * Validate and normalize raw YAML data into a typed OntologySchema.
- */
-function validateSchema(data: Record<string, unknown>): OntologySchema {
-  if (!data.version || typeof data.version !== "string") {
-    throw new Error("Ontology schema must have a 'version' string");
-  }
-  if (!data.name || typeof data.name !== "string") {
-    throw new Error("Ontology schema must have a 'name' string");
-  }
-
-  const schema: OntologySchema = {
-    version: data.version as string,
-    name: data.name as string,
-    description: (data.description as string) ?? "",
-    entity_types: parseEntityTypes(data.entity_types),
-    relation_types: parseRelationTypes(data.relation_types),
-    actions: parseActions(data.actions),
-    component_schemas: parseComponentSchemas(data.component_schemas),
-  };
+  const data = parseYAML(yamlContent);
+  
+  // Zod handles all validation, type coercion, and defaults!
+  const parsedSchema = OntologySchemaZ.parse(data) as OntologySchema;
 
   // Cross-validate: ensure actions reference valid entity types
-  for (const action of schema.actions) {
+  // (We could do this with Zod refine(), but keeping it here is fine for clarity)
+  for (const action of parsedSchema.actions) {
     for (const actorType of action.actor_types) {
-      if (!VALID_ENTITY_TYPES.includes(actorType)) {
+      if (!EntityTypeZ.options.includes(actorType as any)) {
         throw new Error(
           `Action "${action.id}" references unknown actor type: ${actorType}`
         );
@@ -79,92 +130,9 @@ function validateSchema(data: Record<string, unknown>): OntologySchema {
     }
   }
 
-  return schema;
-}
+  // Inject defaults for missing entity/relation types if they weren't fully specified
+  // Though Zod's .default([]) handles omitting the arrays entirely.
+  // We can also ensure all valid types are represented if we want, but let's stick to what's defined.
 
-function parseEntityTypes(
-  raw: unknown
-): EntityTypeSchema[] {
-  if (!Array.isArray(raw)) return getDefaultEntityTypes();
-  return raw.map((item: Record<string, unknown>) => ({
-    type: item.type as EntityType,
-    description: (item.description as string) ?? "",
-    required_properties: (item.required_properties as string[]) ?? [],
-    optional_properties: (item.optional_properties as string[]) ?? [],
-    allowed_components: (item.allowed_components as string[]) ?? [],
-  }));
-}
-
-function parseRelationTypes(
-  raw: unknown
-): RelationTypeSchema[] {
-  if (!Array.isArray(raw)) return getDefaultRelationTypes();
-  return raw.map((item: Record<string, unknown>) => ({
-    type: item.type as RelationType,
-    description: (item.description as string) ?? "",
-    source_types: (item.source_types as EntityType[]) ?? VALID_ENTITY_TYPES,
-    target_types: (item.target_types as EntityType[]) ?? VALID_ENTITY_TYPES,
-  }));
-}
-
-function parseActions(raw: unknown): ActionSchema[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item: Record<string, unknown>) => ({
-    id: item.id as string,
-    name: (item.name as string) ?? item.id,
-    description: (item.description as string) ?? "",
-    preconditions: parseConditions(item.preconditions),
-    effects: parseEffects(item.effects),
-    tick_cost: (item.tick_cost as number) ?? 1,
-    stamina_cost: item.stamina_cost as number | undefined,
-    actor_types: (item.actor_types as EntityType[]) ?? ["agent", "npc"],
-  }));
-}
-
-function parseConditions(raw: unknown): Condition[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item: Record<string, unknown>) => ({
-    type: item.type as Condition["type"],
-    description: item.description as string | undefined,
-    params: (item.params as Record<string, unknown>) ?? {},
-  }));
-}
-
-function parseEffects(raw: unknown): Effect[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item: Record<string, unknown>) => ({
-    type: item.type as Effect["type"],
-    description: item.description as string | undefined,
-    params: (item.params as Record<string, unknown>) ?? {},
-  }));
-}
-
-function parseComponentSchemas(raw: unknown): ComponentSchema[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item: Record<string, unknown>) => ({
-    type: item.type as string,
-    description: (item.description as string) ?? "",
-    properties: (item.properties as ComponentSchema["properties"]) ?? {},
-  }));
-}
-
-// ─── Default Schemas ──────────────────────────────────────────────────────────
-
-function getDefaultEntityTypes(): EntityTypeSchema[] {
-  return VALID_ENTITY_TYPES.map((type) => ({
-    type,
-    description: `Default ${type} entity`,
-    required_properties: [],
-    optional_properties: [],
-    allowed_components: [],
-  }));
-}
-
-function getDefaultRelationTypes(): RelationTypeSchema[] {
-  return VALID_RELATION_TYPES.map((type) => ({
-    type,
-    description: `Default ${type} relation`,
-    source_types: VALID_ENTITY_TYPES,
-    target_types: VALID_ENTITY_TYPES,
-  }));
+  return parsedSchema;
 }

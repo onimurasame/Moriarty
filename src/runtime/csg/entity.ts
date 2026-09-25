@@ -13,7 +13,7 @@ import type {
   PropertyValue,
   Component,
   Vector3,
-} from "./types.js";
+} from "../types.js";
 
 /**
  * Options for creating a new entity.

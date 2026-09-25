@@ -13,7 +13,7 @@ import type {
   SerializedEntity,
   SerializedRelation,
   StateDelta,
-} from "./types.js";
+} from "../types.js";
 
 /**
  * Serialize an Entity (convert Maps to Records for JSON compatibility).

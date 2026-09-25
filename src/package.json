@@ -9,16 +9,23 @@
     "build": "tsc",
     "dev": "tsx watch runtime/index.ts",
     "start": "tsx runtime/index.ts",
-    "demo": "tsx runtime/demo.ts",
+    "headless": "tsx runtime/index.ts --headless",
+    "demo": "tsx runtime/index.ts --demo",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .ts"
   },
   "dependencies": {
     "@google/genai": "^2.3.0",
-    "yaml": "^2.7.0",
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "goap-solver": "^0.4.0",
+    "graphology": "^0.26.0",
+    "ollama": "^0.6.3",
     "uuid": "^11.1.0",
     "ws": "^8.18.0",
+    "yaml": "^2.7.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

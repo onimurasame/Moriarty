@@ -14,7 +14,7 @@ import type {
   GraphQuery,
   QueryResult,
   Vector3,
-} from "./types.js";
+} from "../types.js";
 import { isRelationActive } from "./relation.js";
 import { getPosition } from "./entity.js";
 
@@ -39,7 +39,10 @@ export function executeQuery(
 ): QueryResult {
   switch (query.type) {
     case "entities_by_type":
-      return queryEntitiesByType(entities, query.params.entity_type as EntityType);
+      return queryEntitiesByType(
+        entities,
+        (query.params.entity_type ?? query.params.type) as EntityType
+      );
 
     case "entities_by_tag":
       return queryEntitiesByTag(entities, query.params.tag as string);
@@ -48,7 +51,7 @@ export function executeQuery(
       return queryEntitiesInLocation(
         entities,
         relations,
-        query.params.location_id as string,
+        (query.params.location_id ?? query.params.entity_id) as string,
         currentTick
       );
 
@@ -63,8 +66,8 @@ export function executeQuery(
     case "entities_near":
       return queryEntitiesNear(
         entities,
-        query.params.position as Vector3,
-        query.params.radius as number
+        (query.params.position ?? query.params.center) as Vector3,
+        (query.params.radius ?? query.params.max_distance) as number
       );
 
     case "events_caused_by":
@@ -77,8 +80,8 @@ export function executeQuery(
       return queryPathBetween(
         entities,
         relations,
-        query.params.source_id as string,
-        query.params.target_id as string,
+        (query.params.source_id ?? query.params.start_id) as string,
+        (query.params.target_id ?? query.params.end_id) as string,
         currentTick
       );
 

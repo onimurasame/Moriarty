@@ -246,6 +246,9 @@ export function hydrateWorld(
   }
   console.log(`  🤖 Agent: ${agentDef.name} → ${agentEntity.id}`);
 
+  // Establish initial baseline snapshot so simulation ticks compute deltas relative to loaded world state
+  csg.commitBaseline();
+
   console.log(`[WorldLoader] World loaded: ${idMap.size} entities created.`);
   return idMap;
 }
